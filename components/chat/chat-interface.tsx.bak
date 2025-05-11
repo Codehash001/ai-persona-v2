@@ -1,0 +1,410 @@
+"use client"
+
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Send, User, PlusCircle, LogOut } from "lucide-react"
+import { useChat, Message } from 'ai/react'
+import { ThemeToggle } from "@/components/theme-toggle"
+import ReactMarkdown from 'react-markdown'
+import { z } from "zod"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+
+type Role = 'system' | 'user' | 'assistant' | 'data'
+
+const usernameSchema = z
+  .string()
+  .min(3, "Username must be at least 3 characters")
+  .max(20, "Username must be at most 20 characters")
+  .regex(
+    /^[a-zA-Z0-9_-]+$/,
+    "Username can only contain letters, numbers, underscores (_) and hyphens (-)"
+  )
+
+interface AIResponse extends Message {
+  conversationId?: string
+}
+
+export function ChatInterface() {
+  const [username, setUsername] = useState<string>('')
+  const [usernameError, setUsernameError] = useState<string | null>(null)
+  const [showConsentPopup, setShowConsentPopup] = useState(true)
+  const [showUsernameModal, setShowUsernameModal] = useState(false)
+  const [conversationId, setConversationId] = useState<string | null>(null)
+  const [avatarColor] = useState(() => {
+    const hue = Math.floor(Math.random() * 360)
+    return `hsl(${hue}, 70%, 85%)`
+  })
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [aiMessages, setAiMessages] = useState<AIResponse[]>([])
+
+  const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
+    api: '/api/chat',
+    body: {
+      username,
+      conversationId
+    },
+    onResponse: async (response) => {
+      if (response.ok) {
+        try {
+          const data = await response.json()
+          console.log('Response data:', data)
+          // Ensure the message has a timestamp
+          const messageWithTimestamp = {
+            ...data,
+            createdAt: data.createdAt || new Date().toISOString()
+          }
+          setAiMessages(prev => [...prev, messageWithTimestamp])
+          if (!conversationId && data.conversationId) {
+            setConversationId(data.conversationId)
+          }
+        } catch (error) {
+          console.error('Error parsing response:', error)
+        }
+      }
+    },
+    onFinish: (message: AIResponse) => {
+      console.log('Message finished:', message)
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  })
+
+  // Format timestamp safely
+  const formatMessageTime = (timestamp: Date | string | undefined) => {
+    if (!timestamp) return formatTime(new Date())
+    return formatTime(new Date(timestamp))
+  }
+
+  // Combine user messages with AI responses in chronological order
+  const allMessages = useMemo(() => {
+    // Add timestamps to messages if they don't have one
+    const messagesWithTimestamps = messages.map(msg => ({
+      ...msg,
+      createdAt: msg.createdAt || new Date().toISOString()
+    }))
+    
+    // Combine all messages into a single array
+    const combined = [...messagesWithTimestamps, ...aiMessages]
+    
+    // Sort messages by timestamp
+    return combined.sort((a, b) => {
+      const timeA = new Date(a.createdAt || new Date()).getTime()
+      const timeB = new Date(b.createdAt || new Date()).getTime()
+      if (timeA === timeB) {
+        return a.role === 'user' ? -1 : 1
+      }
+      return timeA - timeB
+    })
+  }, [messages, aiMessages])
+
+  useEffect(() => {
+    console.log('Current messages:', allMessages)
+  }, [allMessages])
+
+  const handleNewChat = useCallback(() => {
+    setAiMessages([])
+    setConversationId(null)
+    window.location.reload()
+  }, [])
+
+  useEffect(() => {
+    console.log('Current messages:', messages)
+  }, [messages])
+
+  useEffect(() => {
+    const storedUsername = localStorage.getItem('username')
+    const consentGiven = localStorage.getItem('consentGiven')
+    
+    if (consentGiven === 'true') {
+      setShowConsentPopup(false)
+      
+      if (storedUsername) {
+        setUsername(storedUsername)
+        setShowUsernameModal(false)
+      } else {
+        setShowUsernameModal(true)
+      }
+    }
+  }, [])
+
+  const handleConsentSubmit = (agree: boolean) => {
+    if (agree) {
+      localStorage.setItem('consentGiven', 'true')
+      setShowConsentPopup(false)
+      setShowUsernameModal(true)
+    } else {
+      // User does not consent, show a message or redirect
+      alert('You must consent to participate in the research study to continue.')
+    }
+  }
+
+  const handleUsernameSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    try {
+      usernameSchema.parse(username)
+      localStorage.setItem('username', username.trim())
+      setShowUsernameModal(false)
+      setUsernameError(null)
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        setUsernameError(error.errors[0].message)
+      }
+    }
+  }
+
+  const startNewChat = useCallback(() => {
+    handleNewChat()
+  }, [handleNewChat])
+
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map(word => word[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2)
+  }
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  useEffect(() => {
+    if (allMessages.length > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [allMessages])
+
+  const calculateTypingDelay = (text: string) => {
+    const CHARS_PER_SECOND = 3.33
+    const randomFactor = 0.8 + Math.random() * 0.4
+    const baseDelay = Math.min(Math.max(text.length / CHARS_PER_SECOND * randomFactor, 1500), 5000)
+    const thinkingTime = Math.min(text.length / 10, 2000)
+    return baseDelay + thinkingTime
+  }
+
+  const retry = () => {
+    if (messages.length > 0) {
+      const lastUserMessage = messages.find(msg => msg.role === 'user')
+      if (lastUserMessage) {
+        const event = {
+          target: { value: lastUserMessage.content },
+          preventDefault: () => {}
+        } as React.ChangeEvent<HTMLInputElement>
+        
+        handleInputChange(event)
+        handleSubmit(event as any)
+      }
+    }
+  }
+
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: true 
+    }).toLowerCase()
+  }
+
+  const handleNewConversation = () => {
+    setConversationId(null)
+    // Clear messages (this will trigger useChat to reset)
+    localStorage.removeItem('username');
+    setShowUsernameModal(true);
+    window.location.reload();
+  }
+
+  if (showUsernameModal) {
+    return (
+      <div className="h-full flex items-center justify-center bg-transparent">
+        <div className="w-full max-w-sm p-6  rounded-2xl border border-black/10 dark:border-white/10 shadow-lg">
+          <h2 className="text-2xl font-bold text-center text-black dark:text-white mb-6">
+            Welcome to Persona
+          </h2>
+          <form onSubmit={handleUsernameSubmit} className="space-y-4">
+            <div>
+              <label htmlFor="username" className="block text-sm font-medium text-black dark:text-white mb-2">
+                Enter your name to continue
+              </label>
+              <Input
+                id="username"
+                type="text"
+                placeholder="username (letters, numbers, _ or -)"
+                value={username}
+                onChange={(e) => {
+                  setUsername(e.target.value)
+                  setUsernameError(null)
+                }}
+                className={`w-full h-12 bg-transparent border-black/10 dark:border-white/10 rounded-xl px-4 text-black dark:text-white placeholder:text-black/40 dark:placeholder:text-white/40 focus-visible:ring-0 focus-visible:ring-offset-0 ${
+                  usernameError ? 'border-red-500' : ''
+                }`}
+                autoFocus
+              />
+              {usernameError && (
+                <p className="text-sm text-red-500 mt-1">{usernameError}</p>
+              )}
+            </div>
+            <Button 
+              type="submit"
+              disabled={!username.trim()}
+              className="w-full h-12 rounded-xl bg-black dark:bg-white hover:bg-black/90 dark:hover:bg-white/90 text-white dark:text-black border border-black/10 dark:border-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Start Chatting
+            </Button>
+          </form>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="px-1 py-2 sm:p-4 border-b border-black/10 dark:border-white/10 bg-transparent">
+        <div className="flex items-center justify-between max-w-7xl mx-auto">
+          <Button
+            onClick={handleNewConversation}
+            variant="ghost"
+            className="hidden sm:flex items-center gap-2 text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-3xl border border-black/10 dark:border-white/10"
+          >
+            <PlusCircle className="h-5 w-5" />
+            New Conversation
+          </Button>
+
+          <PlusCircle 
+          onClick={handleNewConversation}
+          className="flex sm:hidden items-center gap-2 text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-3xl  h-7 w-7"
+          />
+
+          <div className="flex items-center gap-3">
+            <Popover>
+              <PopoverTrigger asChild>
+                <div 
+                  className="h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium shadow-xlsm:shadow-sm cursor-pointer hover:opacity-80"
+                  style={{ 
+                    backgroundColor: avatarColor,
+                    color: 'black'
+                  }}
+                >
+                  {getInitials(username)}
+                </div>
+              </PopoverTrigger>
+              <PopoverContent className="w-40 p-2" align="end">
+                <div className="text-sm font-medium text-black dark:text-white mb-2 px-2">
+                  {username}
+                </div>
+                <Button 
+                  variant="ghost" 
+                  className="w-full justify-start text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+                  onClick={() => {
+                    localStorage.removeItem('username');
+                    setShowUsernameModal(true);
+                  }}
+                >
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Logout
+                </Button>
+              </PopoverContent>
+            </Popover>
+            <span className="text-sm font-medium text-black dark:text-white hidden sm:flex">
+              {username}
+            </span>
+            <ThemeToggle />
+          </div>
+        </div>
+      </div>
+      
+      <div className="flex-1 overflow-hidden relative bg-transparent">
+        <ScrollArea className="h-full absolute inset-0 [&_[data-radix-scroll-area-viewport]]:!block [&_[data-radix-scroll-area-scrollbar]]:!hidden py-3">
+          <div className="max-w-7xl mx-auto space-y-4">
+            {allMessages.map((message) => (
+              <div
+                key={message.id}
+                className={`flex items-end gap-2 ${
+                  message.role === 'user' ? 'flex-row-reverse' : 'flex-row'
+                } animate-in slide-in-from-bottom duration-300`}
+              >
+                {message.role === 'user' ? (
+                  <div 
+                    className="flex flex-shrink-0 h-8 w-8 rounded-full items-center justify-center shadow-sm"
+                    style={{ 
+                      backgroundColor: avatarColor,
+                      color: 'black'
+                    }}
+                  >
+                    {getInitials(username)}
+                  </div>
+                ) : (
+                  <div className="flex flex-shrink-0 h-8 w-8 rounded-full items-center justify-center bg-transparent border border-black/10 dark:border-white/10 shadow-sm">
+                    <User className="h-5 w-5 text-black dark:text-white" />
+                  </div>
+                )}
+                <div className="flex flex-col">
+                  <div
+                    className={`px-4 py-2 rounded-2xl max-w-full break-words shadow-sm prose-sm
+                      ${message.role === 'user'
+                        ? 'bg-black dark:bg-white text-white dark:text-black rounded-br-none border border-black/10 dark:border-white/10 prose-headings:text-white dark:prose-headings:text-black prose-p:text-white/90 dark:prose-p:text-black/90' 
+                        : 'bg-transparent text-black dark:text-white rounded-bl-none border border-black/10 dark:border-white/10 prose-headings:text-black dark:prose-headings:text-white prose-p:text-black/90 dark:prose-p:text-white/90'
+                      }
+                    `}
+                  >
+                    <ReactMarkdown className="prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                      {message.content}
+                    </ReactMarkdown>
+                  </div>
+                  <span className={`text-xs text-black/60 dark:text-white/60 mt-1 ${
+                    message.role === 'user' ? 'text-right mr-2' : 'ml-2'
+                  }`}>
+                    {message.role === 'user' ? username : 'stranger'} • {formatMessageTime(message.createdAt)}
+                    </div>
+                    <span className="text-xs text-black/60 dark:text-white/60 mt-1 ml-2">
+                      typing...
+                    </span>
+                  </div>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+          </ScrollArea>
+        </div>
+
+        {allMessages.length === 0 && (
+          <div className="p-2 text-center">
+            <p className="text-black/50 dark:text-white/50">No messages yet. Start a conversation!</p>
+          </div>
+        )}
+            <Button 
+              type="submit"
+              size="icon"
+              disabled={isLoading || !input.trim()}
+              className="h-12 w-12 rounded-full bg-black dark:bg-white hover:bg-black/90 dark:hover:bg-white/90 border border-black/10 dark:border-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Send className="h-5 w-5 text-white dark:text-black" />
+            </Button>
+          </div>
+        </form>
+      </div>
+    )}
+  </div>
+)
+            onChange={handleInputChange}
+            className="flex-1 h-12 bg-transparent border-black/10 dark:border-white/10 rounded-full px-4 sm:px-6 text-black dark:text-white placeholder:text-black/40 dark:placeholder:text-white/40 focus-visible:ring-0 focus-visible:ring-offset-0"
+          />
+          <Button 
+            type="submit"
+            size="icon"
+            disabled={isLoading || !input.trim()}
+            className="h-12 w-12 rounded-full bg-black dark:bg-white hover:bg-black/90 dark:hover:bg-white/90 border border-black/10 dark:border-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Send className="h-5 w-5 text-white dark:text-black" />
+          </Button>
+        </div>
+      </form>
+    </div>
+  )
+}
