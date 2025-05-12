@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { BaseInstructionsTab } from "./base-instructions-tab"
 import { useQuery } from "@tanstack/react-query"
 import {
   Card,
@@ -22,7 +23,7 @@ import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { useToast } from "@/hooks/use-toast"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Bot, Zap, MessageSquare } from "lucide-react"
+import { Bot, Zap, MessageSquare, FileText } from "lucide-react"
 import { Textarea } from "@/components/ui/textarea"
 import { Skeleton } from "@/components/ui/skeleton"
 
@@ -64,6 +65,7 @@ const availableModels = [
 
 export function SettingsSection() {
   const [settings, setSettings] = useState<Settings>(defaultSettings)
+  const [baseInstructions, setBaseInstructions] = useState<string>("") 
   const [isSaving, setIsSaving] = useState(false)
   const { toast } = useToast()
 
@@ -110,9 +112,13 @@ export function SettingsSection() {
               <Zap className="h-4 w-4" />
               <span>Model</span>
             </TabsTrigger>
-            <TabsTrigger value="messages" className="space-x-2" disabled>
+            <TabsTrigger value="end-pop-up" className="space-x-2" disabled>
               <MessageSquare className="h-4 w-4" />
-              <span>Messages</span>
+              <span>End Pop-up</span>
+            </TabsTrigger>
+            <TabsTrigger value="base-instructions" className="space-x-2" disabled>
+              <FileText className="h-4 w-4" />
+              <span>Base Instructions</span>
             </TabsTrigger>
           </TabsList>
 
@@ -165,7 +171,8 @@ export function SettingsSection() {
   const saveSettings = async () => {
     setIsSaving(true)
     try {
-      const response = await fetch("/api/settings", {
+      // Save main settings
+      const settingsResponse = await fetch("/api/settings", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -173,15 +180,30 @@ export function SettingsSection() {
         body: JSON.stringify(settings),
       })
 
-      if (response.ok) {
-        toast({
-          title: "Settings saved",
-          description: "Your settings have been updated successfully.",
-        })
-      } else {
-        const error = await response.json()
+      if (!settingsResponse.ok) {
+        const error = await settingsResponse.json()
         throw new Error(error.message)
       }
+      
+      // Save base instructions if they've been loaded/modified
+      if (baseInstructions) {
+        const instructionsResponse = await fetch("/api/admin/base-instructions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ value: baseInstructions }),
+        })
+        
+        if (!instructionsResponse.ok) {
+          throw new Error("Failed to update base instructions")
+        }
+      }
+
+      toast({
+        title: "Settings saved",
+        description: "Your settings have been updated successfully.",
+      })
     } catch (error) {
       console.error("Failed to save settings:", error)
       toast({
@@ -222,6 +244,10 @@ export function SettingsSection() {
           <TabsTrigger value="end-pop-up" className="space-x-2">
             <MessageSquare className="h-4 w-4" />
             <span>End Pop-up</span>
+          </TabsTrigger>
+          <TabsTrigger value="base-instructions" className="space-x-2">
+            <FileText className="h-4 w-4" />
+            <span>Base Instructions</span>
           </TabsTrigger>
         </TabsList>
 
@@ -364,10 +390,32 @@ export function SettingsSection() {
                     setSettings({ ...settings, exitChatModalText: e.target.value })
                   }
                   placeholder="Enter text to display when user clicks exit chat button"
-                  className="min-h-[100px]"
+                  className="min-h-[250px]"
                 />
                 <p className="text-sm text-muted-foreground">
                   This text will be displayed in the confirmation modal when a user clicks the exit chat button
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="base-instructions" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Base Instructions</CardTitle>
+              <CardDescription>
+                Configure the base conversation style instructions that will be appended to all system prompts
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <Label>Conversation Style Instructions</Label>
+                <div className="mt-4">
+                  <BaseInstructionsTab onInstructionsChange={setBaseInstructions} />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  These instructions help guide the AI's conversational style and are appended to all system prompts
                 </p>
               </div>
             </CardContent>

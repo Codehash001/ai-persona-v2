@@ -299,7 +299,7 @@ export async function POST(req: Request) {
     });
     
     // Use the instructions from the database or fall back to default
-    const humanLikeInstructions = baseInstructionsSettings?.value || DEFAULT_HUMAN_LIKE_INSTRUCTIONS;
+    const humanLikeInstructions = baseInstructionsSettings?.value || DEFAULT_HUMAN_LIKE_INSTRUCTIONS; 
 
     // Combine the original system prompt with human-like instructions
     const enhancedSystemPrompt = systemPrompt + humanLikeInstructions;
