@@ -71,6 +71,11 @@ export function ChatInterface() {
   const [avatarColor, setAvatarColor] = useState(`hsl(210, 70%, 85%)`)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [aiMessages, setAiMessages] = useState<AIResponse[]>([])
+  
+  // Define scrollToBottom before it's used
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [])
 
   const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
     api: '/api/chat',
@@ -88,7 +93,12 @@ export function ChatInterface() {
             ...data,
             createdAt: data.createdAt || new Date().toISOString()
           }
-          setAiMessages(prev => [...prev, messageWithTimestamp])
+          setAiMessages(prev => {
+        const newMessages = [...prev, messageWithTimestamp];
+        // Schedule a scroll after state update
+        setTimeout(scrollToBottom, 100);
+        return newMessages;
+      })
           if (!conversationId && data.conversationId) {
             setConversationId(data.conversationId)
           }
@@ -99,7 +109,7 @@ export function ChatInterface() {
     },
     onFinish: (message: AIResponse) => {
       console.log('Message finished:', message)
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      scrollToBottom()
     }
   })
 
@@ -130,6 +140,11 @@ export function ChatInterface() {
       return timeA - timeB
     })
   }, [messages, aiMessages])
+
+  // Auto-scroll when messages change
+  useEffect(() => {
+    scrollToBottom();
+  }, [allMessages])
 
   useEffect(() => {
     console.log('Current messages:', allMessages)
@@ -237,9 +252,7 @@ export function ChatInterface() {
     return name.slice(0, 2).toUpperCase()
   }
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
+  // Function moved to before it's used
 
   // Simulate typing effect with delay based on message length
   // This helps make the AI responses feel more natural
@@ -520,7 +533,7 @@ export function ChatInterface() {
       
       {/* End Conversation Dialog */}
       <Dialog open={showEndDialog} onOpenChange={setShowEndDialog}>
-        <DialogContent className="sm:max-w-[425px] rounded-lg">
+        <DialogContent className="sm:max-w-2xl rounded-lg">
           <DialogHeader>
             <DialogTitle>End Conversation</DialogTitle>
             <DialogDescription className="pt-2">
@@ -570,7 +583,11 @@ export function ChatInterface() {
       
       {/* Input Form */}
       <form 
-        onSubmit={handleSubmit}
+        onSubmit={(e) => {
+          handleSubmit(e);
+          // Scroll to bottom after submitting
+          setTimeout(scrollToBottom, 100);
+        }}
         className="py-2 px-1  bg-transparent"
       >
         <div className="flex gap-2 max-w-7xl mx-auto rounded-xl border border-black/10 dark:border-white/10 p-2">
