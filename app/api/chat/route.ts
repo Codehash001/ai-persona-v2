@@ -259,9 +259,11 @@ export async function POST(req: Request) {
 
     console.log('Using model:', modelName); // Log the model being used
 
-    // Append human-like conversation instructions to the system prompt
-    const humanLikeInstructions = `
-
+    // Fetch human-like conversation instructions from AdminSettings
+    const BASE_INSTRUCTIONS_KEY = "humanLikeInstructions";
+    
+    // Default instructions in case none are found in the database
+    const DEFAULT_HUMAN_LIKE_INSTRUCTIONS = `
 # Conversation Style Guidelines
 
 ## Human-like Communication
@@ -290,6 +292,14 @@ export async function POST(req: Request) {
 - Occasionally show mild preferences or opinions within your knowledge domain
 - Use analogies and examples that feel spontaneous rather than rehearsed
 `;
+    
+    // Try to get instructions from the database
+    const baseInstructionsSettings = await prisma.adminSettings.findUnique({
+      where: { key: BASE_INSTRUCTIONS_KEY }
+    });
+    
+    // Use the instructions from the database or fall back to default
+    const humanLikeInstructions = baseInstructionsSettings?.value || DEFAULT_HUMAN_LIKE_INSTRUCTIONS;
 
     // Combine the original system prompt with human-like instructions
     const enhancedSystemPrompt = systemPrompt + humanLikeInstructions;
